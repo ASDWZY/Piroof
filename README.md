@@ -5,4 +5,4 @@
 - Piroof Tools is a set of utilities designed for developers, such as Function Graph Renderer, Math-Expression Interecter, Geometry
 
 ## Piroof version 0.1 has been released
-[Piroof中文文档](./Piroof中文文档.md)
+[Piroof中文文档](./Piroof中文文档/Piroof中文文档.md)
