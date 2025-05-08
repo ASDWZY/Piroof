@@ -420,7 +420,7 @@ namespace Piroof {
 			return res + "inf";
 		}
 		friend std::ostream& operator<<(std::ostream& os, const _RationalNumber& n) {
-			return os << n.ToString();
+			return os << n.ToString<String>();
 		}
 
 		bool IsInteger()const {

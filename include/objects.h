@@ -116,4 +116,8 @@ namespace Piroof {
 	vart Pir_number(const RationalNumber& n);
 	vart Pir_float(double x);
 	vart Pir_int(const Integer& x);
+
+	typedef PirValObject<Vector<vart>> PirTupleObject;
+	extern vart PirTupleType;
+	vart Pir_tuple(const std::vector<vart>& t);
 }

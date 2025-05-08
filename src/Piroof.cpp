@@ -5,6 +5,9 @@
 #include "objects.cpp"
 #include "expr.cpp"
 #include "calc.cpp"
+#include "theorem.cpp"
+
+#define PIR_DEBUG
 
 #define IsDelimiter(x) ((x)==' '||(x)=='\t')
 #define IsEOE(x) ((x)==','||(x)==';'||(x)==']'||(x)==')'||(x)=='}')
@@ -28,6 +31,7 @@ struct BuiltinVars {
 		globals.insert({ "int", PirIntType });
 		globals.insert({ "float", PirFloatType });
 		globals.insert({ "string", PirStringType });
+		globals.insert({ "tuple", PirTupleType });
 		globals.insert({ "Exception", PirExceptionType });
 		globals.insert({ "expr",PirExprType });
 		globals.insert({"interpreter", PirInterpreterType});
@@ -46,6 +50,7 @@ struct BuiltinVars {
 
 		globals.insert({ "isconstexpr",PirIsconstexpr });
 		globals.insert({ "expand", PirExpand });
+		globals.insert({ "sortexpr", PirSortexpr });
 	}
 	~BuiltinVars() {
 
@@ -78,6 +83,7 @@ void Interpreter::initTkmp() {
 		{">",GT},
 		{"<=",LE},
 		{">=",GE},
+		{"!=",NEQ},
 
 		{"not",NOT},
 		{"or",OR},
@@ -103,12 +109,12 @@ void Interpreter::initTkmp() {
 }
 void Interpreter::initOperators() {
 	operators = {
-		{-1,OP_NONE},//none 0
+		{-1},//none 0
 		{100,OP_PRE},//obj 1
 
 		{100},//string 2
 		{100},//fncall 3
-		{100},//tuple 4
+		{100,OP_PRE},//tuple 4
 		{100},//dict 5
 
 		{100,OP_PRE,false,"if "},//if 6
@@ -128,6 +134,7 @@ void Interpreter::initOperators() {
 		{8,OP_MID,false,">"},//> 18
 		{8,OP_MID,false,"<="},//<= 19
 		{8,OP_MID,false,">="},//>= 20
+		{8,OP_MID,false,"!="},
 
 		{20,OP_PRE,false,"¬"},//not 
 		{5,OP_MID,false," and "},//and 
@@ -146,7 +153,7 @@ void Interpreter::initOperators() {
 		{1,OP_PRE,false,"suppose "},//suppose
 		{1,OP_PRE,false},//include
 
-		{-1,OP_NONE}//max_token
+		{100}//max_token
 	};
 }
 void Interpreter::clear() {
@@ -259,7 +266,9 @@ int Interpreter::fold() {
 		if (op.m && op.m != OP_POST && op.p >= operators[tp.tk].p &&
 			!(op.post && f.tk == tp.tk)) {
 			f.ch.emplace_back(lst);
-			//cout << "fold1 " << lst.tostr() << " -> " << f.tostr() <<" | "<<tp.tostr()<< endl;
+#ifdef PIR_DEBUG
+			cout << "fold1 " << lst.tostr() << " -> " << f.tostr() <<" | "<<tp.tostr()<< endl;
+#endif
 			f.comp = true;
 		}
 		else {
@@ -272,7 +281,9 @@ int Interpreter::fold() {
 	if (op.m && op.m != OP_PRE) {
 		if (st.top().comp) {
 			tp.ch.emplace_back(st.top());
-			//cout << "fold2 " << st.top().tostr() << " -> " << tp.tostr() << endl;
+#ifdef PIR_DEBUG
+			cout << "fold2 " << st.top().tostr() << " -> " << tp.tostr() << endl;
+#endif
 			st.pop();
 			st.push(tp);
 			return 0;
@@ -586,10 +597,8 @@ vart Interpreter::perform(_Expr& expr,Token tk) {
 		}
 	}
 	switch (expr.tk) {
-	/*
 	case TUPLE:
-		args.release = false;
-		return expr.val = (vart)args.args;*/
+		return expr.val = Pir_tuple(args);
 	case OBJECT:
 		if (checkVar(expr))return 0;
 		expr.trash = false;
@@ -695,10 +704,9 @@ vart Interpreter::interpret(const std::string& code) {
 		if (i == size || (IsDelimiter(code[i]) || eoe)) {
 			bool ch = true;
 			//if (eoe)push();
-			if (eoe) {
+			if (eoe&&code[i]!=']') {
 				st.push({ NONE,"",0,{},false });
-				fold();
-				st.pop();
+				fold();st.pop();
 			}
 			if (bg < i) {
 				Token tk = token(code.c_str() + bg, i - bg);
@@ -708,10 +716,10 @@ vart Interpreter::interpret(const std::string& code) {
 				}
 			}
 			//for [a,] or (a,)=(a,void)
-			else if ((st.top().tk == FNCALL || st.top().tk == TUPLE) && !st.top().comp) {
+			/*else if ((st.top().tk == FNCALL || st.top().tk == TUPLE) && !st.top().comp) {
 				if (st.top().ch.size())st.push({ OBJECT,"",PirVoid,{},true, false });
 				else ch = false;
-			}
+			}*/
 
 			if (eoe && i < size) {
 				_Expr e;
@@ -721,33 +729,29 @@ vart Interpreter::interpret(const std::string& code) {
 				_Expr& t = st.top();
 				switch (code[i]) {
 				case ',':
-					//cout << "asd " << t.tostr() <<" "<<e.tostr()<< endl;
-					/*if (!t.comp && t.tk != NONE) {
-						
-						if (!ch)break;
-						//t.ch.emplace_back(e);
-						st.push(e);
+					st.push(e);
+					st.push({ NONE,"",0,{},false });
+					fold();
+					st.pop();
+					if (st.top().tk == FNCALL || st.top().tk == TUPLE)st.top().comp = false;
+					break;
+				/*case ';':
+					st.push(e);
+					st.push({ NONE,"",0,{},false });
+					fold();
+					st.pop();
+					break;*/
+				case ']':
+					//cout << "asd " << t.tostr() << " " << e.tostr() << endl;
+					if (t.tk == TUPLE&&!t.comp) {
+						/*st.push(e);
 						st.push({ NONE,"",0,{},false });
 						fold();
-						st.pop();
-					}*/
-					st.push(e);
-					st.push({ NONE,"",0,{},false });
-					fold();
-					st.pop();
-					break;
-				case ';':
-					st.push(e);
-					st.push({ NONE,"",0,{},false });
-					fold();
-					st.pop();
-					break;
-				case ']':
-					if (!t.comp && t.tk == TUPLE) {
+						st.pop();*/
 						if (ch)t.ch.emplace_back(e);
 						t.comp = true;
 					}
-					else {
+					else{
 						Pir_raise("InterpreterError: Cannot use ']' here");
 						return 0;
 					}
@@ -778,14 +782,15 @@ vart Interpreter::interpret(const std::string& code) {
 		i++;
 	}
 	//cout << "top " << st.top().tostr() << endl;
-	st.push({ NONE,"",0,{},false });
-	fold();
-	st.pop();
 	trash = false;
 	indent += st.size() + 1;
+	if (!st.top().comp && (st.top().tk == FNCALL || st.top().tk == TUPLE))return 0;
+	st.push({NONE,"",0,{},false});
+	fold();
+	st.pop();
 	if (st.top().comp) {
 		if (normalize(st.top()))return 0;
-		//cout <<"top "<< st.top().tostr() << endl;
+		cout <<"top "<< st.top().tostr() << endl;
 		vart ret = perform(st.top());
 		for (size_t i = 0; i < st.top().ch.size(); i++)
 			st.top().ch[i].release();

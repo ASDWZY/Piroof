@@ -35,7 +35,10 @@ static vart number_div_number(vart a, vart b) {
 static vart number_pow_number(vart a, vart b) {
 	PirNumberObject* va = (PirNumberObject*)a;
 	PirNumberObject* vb = (PirNumberObject*)b;
-	return Pir_number(va->val * vb->val);
+	if (vb->val.IsFloat())return Pir_expr(Expr(POW,va->val,vb->val));
+	if(vb->val.ToDouble()*log10(va->val.ToDouble())>=10.0)
+		return Pir_expr(Expr(POW, va->val, vb->val));
+	return Pir_number(fastpow(va->val,vb->val.P()));
 }
 static vart number_eq_number(vart a, vart b) {
 	PirNumberObject* va = (PirNumberObject*)a;
@@ -110,6 +113,12 @@ vart op_expr(vart a,vart b) {
 	return Pir_expr(Expr(tk, *va->expr));
 }
 
+static vart string_add_string(vart a, vart b) {
+	PirStringObject* va = (PirStringObject*)a;
+	PirStringObject* vb = (PirStringObject*)b;
+	return Pir_string(va->val+vb->val);
+}
+
 void Interpreter::loadOperatorCallbacks() {
 	opcallbacks.insert({ "+number",add_number });
 	opcallbacks.insert({"number+number",number_add_number});
@@ -117,6 +126,7 @@ void Interpreter::loadOperatorCallbacks() {
 	opcallbacks.insert({ "number-number",number_sub_number });
 	opcallbacks.insert({ "number*number",number_mul_number });
 	opcallbacks.insert({ "number/number",number_div_number });
+	opcallbacks.insert({ "number^number",number_pow_number });
 	opcallbacks.insert({ "number=number",number_eq_number });
 	opcallbacks.insert({ "number>number",number_gt_number });
 	opcallbacks.insert({ "number<number",number_lt_number });
@@ -138,6 +148,8 @@ void Interpreter::loadOperatorCallbacks() {
 	opcallbacks.insert({ "expr<=expr",expr_op_expr<LE> });
 	opcallbacks.insert({ "¬expr",op_expr<NOT> });
 	//opcallbacks.insert({ "expr==expr",expr_op_expr<CMP_EQ> });
+
+	opcallbacks.insert({ "string+string",string_add_string });
 }
 vart Interpreter::operate(const String& op, vart a, vart b) {
 	if (!a) {

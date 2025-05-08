@@ -123,10 +123,12 @@ namespace Piroof {
 		T* allocate() {
 			if (released.size()) {
 				T* ret = released.front();
-				released.pop_front();
+				released.pop();
 				return ret;
 			}
-			return head;
+			void* ret = mem + head;
+			head += sizeof(T);
+			return (T*)ret;
 		}
 		void deallocate(T*& ptr) {
 			released.push(ptr);
@@ -270,14 +272,16 @@ namespace Piroof {
 		T* mBegin;
 	};
 
-	template<typename T, typename _size_t=uint64>
-	//typedef int T;
+	template<typename T>
+	struct ListNode {
+		T data;
+		ListNode<T>* prev = 0, * nex = 0;
+	};
+
+	template<typename T,MemoryPoolForList<ListNode<T>>& mempool, typename _size_t=uint64>
 	class List {
 	public:
-		struct Node {
-			T data;
-			Node* prev=0,*nex=0;
-		};
+		typedef ListNode<T> Node;
 		struct iterator {
 			Node* node;
 			iterator() {}
@@ -300,16 +304,21 @@ namespace Piroof {
 				return *this;
 			}
 		};
-		Node* mFirst=0, *mLast=0;
-		_size_t mSize=0;
 		List() {
 
 		}
 		List(const List& x) {
 			*this = x;
 		}
+		~List() {
+			clear();
+		}
 		void emplace_front(const T& data) {
-			Node* x = new Node({data,0,mFirst});
+			Node* x=0;
+			x=mempool.allocate();
+			x->data = data;
+			x->prev = 0;
+			x->nex = mFirst;
 			if (!mLast) {
 				mLast = x;
 			}
@@ -318,7 +327,11 @@ namespace Piroof {
 			mSize++;
 		}
 		void emplace_back(const T& data) {
-			Node* x = new Node({ data,mLast,0 });
+			Node* x=0;
+			x=mempool.allocate();
+			x->data = data;
+			x->prev = mLast;
+			x->nex = 0;
 			if (!mFirst) {
 				mFirst = x;
 			}
@@ -353,7 +366,8 @@ namespace Piroof {
 			Node* x = mFirst;
 			while (x) {
 				Node* y = x->nex;
-				delete x;
+				//delete x;
+				mempool.deallocate(x);
 				x = y;
 			}
 			mFirst = 0;
@@ -386,7 +400,12 @@ namespace Piroof {
 				emplace_back(data);
 				return;
 			}
-			Node* tmp = new Node({ data,x,x->nex });
+			//Node* tmp = new Node({ data,x,x->nex });
+			Node* tmp = 0;
+			tmp=mempool.allocate();
+			tmp->data = data;
+			tmp->prev = x;
+			tmp->nex = x->nex;
 			if (x->nex)
 				x->nex->prev = tmp;
 			x->nex = tmp;
@@ -415,10 +434,13 @@ namespace Piroof {
 			while (nsize > mSize)emplace_back(defaultVal);
 			while (nsize < mSize)pop_back();
 		}
+	private:
+		Node* mFirst = 0, * mLast = 0;
+		_size_t mSize = 0;
 	};
 
-	template<typename T,class fn, typename _size_t>
-	void sortList(List<T,_size_t>& ls,fn&& cmp) {
+	template<typename T,class fn,MemoryPoolForList<ListNode<T>>& mempool, typename _size_t>
+	void sortList(List<T,mempool,_size_t>& ls,fn&& cmp) {
 		/*std::priority_queue<T, std::vector<T>, cmp> q;
 		for (auto& i : ls)q.push(i);
 		ls.clear();

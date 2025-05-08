@@ -378,3 +378,42 @@ Piroof::PirNotsure = Pir_logic(notsure),
 Piroof::PirContra = Pir_logic(contra),
 Piroof::PirInf = Pir_number(inf),
 Piroof::PirInd = Pir_number(ind);
+
+
+static vart tuple_str(vart obj) {
+	PirTupleObject* t = (PirTupleObject*)obj;
+	if (t->val.size() > 100)return Pir_string("<tuple>");
+	String ret = "[";
+	for (size_t i = 0; i < t->val.size(); i++) {
+		vart s = Pir_tostr(t->val[i]);
+		ret += ((PirStringObject*)s)->val+",";
+		Pir_release(s);
+	}
+	if (t->val.size())ret.back() = ']';
+	else ret.push_back(']');
+	return Pir_string(ret);
+}
+static vart tuple_new(vart obj) {
+	PirTupleObject* ret = (PirTupleObject*)Pir_new(PirTupleType);
+	typet type = Pir_type(obj);
+	ret->val = Vector<vart>();
+	if ((vart)type == PirTupleType) {
+		ret->val = ((PirTupleObject*)obj)->val;
+		return (vart)ret;
+	}
+	ret->val.emplace_back(obj);
+	return (vart)ret;
+}
+PirTypeObject _PirTupleType = {
+	PirTypeType,ST_CONST,0,ObjectFunc(),
+	sizeof(PirTupleObject),"tuple",
+	tuple_str,tuple_new
+};
+vart Piroof::PirTupleType=(vart)&_PirTupleType;
+vart Piroof::Pir_tuple(const std::vector<vart>& t) {
+	PirTupleObject* ret = (PirTupleObject*)Pir_new(PirTupleType);
+	ret->val = Vector<vart>();
+	ret->val.resize(t.size());
+	for (size_t i = 0; i < ret->val.size(); i++)ret->val[i] = t[i];
+	return (vart)ret;
+}

@@ -38,6 +38,7 @@ namespace Piroof {
 		GT,
 		LE,
 		GE,
+		NEQ,
 
 		NOT,
 		OR,

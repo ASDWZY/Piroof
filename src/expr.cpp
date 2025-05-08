@@ -2,6 +2,8 @@
 using namespace Piroof;
 using namespace std;
 
+MemoryPoolForList<ListNode<Expr>> Piroof::Expr::Pir_exprmempool;
+
 int Expr::priority(const Interpreter& inter)const {
 	if (ch.size() == 1) {
 		switch (tk) {
@@ -12,6 +14,8 @@ int Expr::priority(const Interpreter& inter)const {
 		}
 	}
 	switch (tk) {
+	case NUMBER:
+		return 100;
 	case SYMBOL:
 		return 100;
 	case VAR:
@@ -23,30 +27,9 @@ int Expr::priority(const Interpreter& inter)const {
 }
 
 Expr::strt Expr::serialize(const Interpreter& inter)const{
-	/*switch (tk) {
-	case VAR:
-		return name;
-	case SYMBOL:
-		return name;
-	case CONSTANT:
-		return name;
-	case NUMBER:
-		return c.ToString<namet>();
-	}
-	std::string r;
-	if (name.size())r = name;
-	else r=inter.getOpname(tk);
-	r.push_back('(');
-	for (const Expr& i : ch)
-		r += std::string(i.serialize(inter).c_str()) + " ";
-	if (ch.size())r.back() = ')';
-	else r.push_back(')');
-	r += c.ToString<std::string>();
-	return r;*/
 
 	strt ret;
 	bool first = true;
-	//cout << "tk " << tk <<" name "<<name<< endl;
 	switch (tk) {
 	case VAR:
 		return ((PirExprObject*)val)->s;
@@ -78,16 +61,13 @@ Expr::strt Expr::serialize(const Interpreter& inter)const{
 				first = false;
 				continue;
 			}
-			if (!first) {
+			if (!first&&bool(i.c.P()>=0))
 				ret.push_back('+');
-			}
 			if (i.c == -1)
 				ret.push_back('-');
 			else if (i.c != 1) {
 				ret += i.c.ToString<strt>();
-				if (i.tk == NUMBER)ret += "*";
 			}
-			//cout << "add " << inter.operators[ADD].p << " i " << i.priority(inter) << endl;
 			if ((first && bool(i.c != 1) && i.priority(inter) < inter.operators[MUL].p) ||
 				(first && i.priority(inter) < inter.operators[ADD].p))
 				ret += "(" + i.serialize(inter) + ")";
@@ -100,7 +80,6 @@ Expr::strt Expr::serialize(const Interpreter& inter)const{
 		break;
 	}
 	std::string opname = inter.getOpname(tk);
-	//cout << "tk " << tk << endl;
 	if (!ch.size())return opname + "()";
 	int p = priority(inter);
 	if (ch.front().priority(inter) < p)ret += "(" + ch.front().serialize(inter) + ")";
@@ -215,7 +194,6 @@ static vart expr_call(vart obj,const Arguments& args) {
 		_expr_new(args[i], ea[i]);
 	Expr ex = *e->expr;
 	ex.replace(DefaultInterpreter,ea);
-	//cout << "ret ";cout<<ex.serialize(DefaultInterpreter) << endl;
 	return Pir_expr(ex);
 }
 PirTypeObject _PirExprType{
@@ -246,7 +224,6 @@ vart Piroof::Pir_symexpr(const std::string& name, Token tk, int8 pos) {
 
 vart Piroof::Pir_expr(const Expr& expr) {
 	PirExprObject* e = (PirExprObject*)Pir_new(PirExprType);
-	//cout << "new expr " << expr.serialize(DefaultInterpreter) << endl;
 	e->expr = new Expr(expr);
 	return (vart)e;
 }
@@ -255,7 +232,9 @@ vart Piroof::Pir_expr(vart obj) {
 	return expr_new(obj);
 }
 
-static Expr::cht exMul(const Expr& e, bool rc = false) {
+static void expand(Expr& e);
+
+inline Expr::cht exMul(const Expr& e, bool rc = false) {
 	if (e.tk==MUL)return e.ch;
 	if (e.tk==ADD && e.ch.size() == 1) {
 		return exMul(e.ch.front());
@@ -266,13 +245,12 @@ static Expr::cht exMul(const Expr& e, bool rc = false) {
 	return ret;
 }
 
-static Expr mulExpr(Expr a, Expr b, bool adda) {
-	//cout << "mul " << a.serialize(DefaultInterpreter) << " " << b.serialize(DefaultInterpreter) << endl;
+inline Expr mulExpr(Expr a, Expr b, bool adda,bool addb) {
 	RationalNumber c = 1;
 	if (adda && !a.isNum() && bool(a.c != 1)) {
 		c *= a.c; a.c = 1;
 	}
-	if (!b.isNum() && bool(b.c != 1)) {
+	if (addb&&!b.isNum() && bool(b.c != 1)) {
 		c *= b.c; b.c = 1;
 	}
 
@@ -281,7 +259,6 @@ static Expr mulExpr(Expr a, Expr b, bool adda) {
 			return a.c * b.c;
 		Expr ret = b;
 		ret.c = a.c;
-		//cout << "cof " << ret.c.ToString<String>() << endl;
 		return ret;
 	}
 	if (b.isNum()) {
@@ -302,7 +279,7 @@ static Expr mulExpr(Expr a, Expr b, bool adda) {
 	return ret;
 }
 
-Expr::cht expandAdd(Expr e) {
+static Expr::cht expandAdd(Expr e) {
 	Expr::cht ret;
 	e.normalize(false);
 
@@ -327,7 +304,7 @@ Expr::cht expandAdd(Expr e) {
 		if (a.tk==ADD) {
 			for (Expr& i : a.ch) {
 				for (Expr& j : b.ch) {
-					ret.emplace_back(mulExpr(i, j, true)); 
+					ret.emplace_back(mulExpr(i, j, true, true)); 
 					//cout << "back " << ret.back().c.ToString<String>() << endl;
 					ret.back().normalize(false);
 				}
@@ -335,7 +312,7 @@ Expr::cht expandAdd(Expr e) {
 		}
 		else {
 			for (Expr& i : b.ch) {
-				ret.emplace_back(mulExpr(a, i, false)); 
+				ret.emplace_back(mulExpr(a, i, false, true)); 
 				ret.back().normalize(false);
 			}
 		}
@@ -345,45 +322,7 @@ Expr::cht expandAdd(Expr e) {
 	return ret;
 }
 
-void _expand(Expr& e) {
-	for (Expr& i : e.ch)
-		_expand(i);
-
-	if (e.tk==MUL) {
-		Expr::cht nch;
-		for (Expr& a : e.ch) {
-			//pow expanding
-			
-			if (bool(a.c > 1)&&bool(a.c<=6) && !a.c.IsFloat() &&
-				a.tk != NUMBER&&a.tk!=CONSTANT&&a.tk!=SYMBOL&&a.tk!=VAR) {
-				Expr y = a;
-				y.c = 1;
-				nch.resize(nch.size() + uint8(a.c.P()), y);
-			}
-			else
-				nch.emplace_back(a);
-		}
-		e.ch = nch;
-		e.ch = expandAdd(e);
-		e.tk=ADD;
-		e.c = 1;//
-		//cout<<"sw "<<ret.serialize(DefaultInterpreter)<<endl;
-	}
-	else if (e.tk==ADD) {
-		e.ch = expandAdd(e);
-		for (Expr& i : e.ch) {
-			if (bool(i.c == 1) || i.tk!=ADD)
-				continue;
-			for (Expr& j : i.ch)
-				j.c *= i.c;
-			i.c = 1;
-		}
-	}
-	//for(Expr& i:ret.ch)i=_expand(i);
-	e.normalize(true);
-}
-
-bool cmpAddExpr(const Expr& a, const Expr& b) {
+static bool cmpAddExpr(const Expr& a, const Expr& b) {
 	//cout << "cmp " << a.serialize(DefaultInterpreter) << " " << int(a.laz) << endl;
 	//cout << "cmp " << b.serialize(DefaultInterpreter) << " " << int(b.laz) << endl;
 	//return a.serialize(DefaultInterpreter) > b.serialize(DefaultInterpreter);
@@ -411,7 +350,7 @@ bool cmpAddExpr(const Expr& a, const Expr& b) {
 	return ma.size()>mb.size();
 }
 
-bool cmpMulExpr(const Expr& a, const Expr& b) {
+static bool cmpMulExpr(const Expr& a, const Expr& b) {
 	if (a.laz != b.laz)
 		return a.laz < b.laz;
 	int na = int(a.isNum());
@@ -420,14 +359,14 @@ bool cmpMulExpr(const Expr& a, const Expr& b) {
 	return a.serialize(DefaultInterpreter) < b.serialize(DefaultInterpreter);
 }
 
-bool sameTerm(Expr a,const Expr& b) {
+inline bool sameTerm(Expr a,const Expr& b) {
 	if (a.isNum() && b.isNum())
 		return true;
 	a.c = b.c;
 	return a == b;
 }
 
-Expr mergeTerms(Expr& e) {
+inline Expr mergeTerms(Expr& e) {
 	Expr ret = e;
 	ret.ch.resize(0);
 	auto i = e.ch.begin(), j = i;
@@ -450,42 +389,98 @@ Expr mergeTerms(Expr& e) {
 }
 typedef bool(*cmpt)(const Expr&, const Expr&);
 
-Expr _sortExpr(const Expr& e) {
+inline void _sortExpr(Expr& e) {
 	//cout<<"sort ";e.print();
 
-	Expr ret = e;
-	for (Expr& i : ret.ch)
-		i = _sortExpr(i);
+	for (Expr& i : e.ch)
+		_sortExpr(i);
 	if (e.tk==ADD) {
-		sortList(ret.ch, cmpAddExpr);
-		ret = mergeTerms(ret);
+		sortList(e.ch, cmpAddExpr);
+		e = mergeTerms(e);
 	}
 	else if (e.tk==MUL) {
-		sortList(ret.ch, cmpMulExpr);
-		ret = mergeTerms(ret);
+		sortList(e.ch, cmpMulExpr);
+		e = mergeTerms(e);
 	}
-	return ret;
 }
 
-void sortExpr(Expr& e) {
+inline void sortExpr(Expr& e) {
 	//cout << "sorting " << e.serialize(DefaultInterpreter) << endl;
 	e.normalize(true);
 	if(!e.laz)e.calc_laz();
-	Expr t = _sortExpr(e);
-	t.normalize(true);
+	_sortExpr(e);
+	/*t.normalize(true);
 	while (t != e) {
 		//cout << "sorting " << t.serialize(DefaultInterpreter) << endl;
 		e = t;
 		e.calc_laz();
 		Expr t = _sortExpr(e);
 		t.normalize(true);
-	}
+	}*/
 }
 
-void expand(Expr& e) {
-	e.normalize(true);
-	_expand(e);
-	sortExpr(e);
+inline Expr::cht mulExpr(const Expr::cht& a, const Expr::cht& b) {
+	Expr::cht ret;
+	if (!a.size())return b;
+	if (!b.size())return a;
+	for (const Expr& i : a) {
+		for (const Expr& j : b) {
+			//ret.emplace_back(i*j);
+			ret.emplace_back(mulExpr(i,j,true,true));
+			sortExpr(ret.back());
+		}
+	}
+	return ret;
+}
+
+static void expand(Expr& e) {
+	for (Expr& i : e.ch)
+		expand(i);
+	if (e.tk == MUL) {
+		for (Expr& a : e.ch) {
+			//pow expanding
+			if (bool(a.c > 1) && bool(a.c < 8) && !a.c.IsFloat() &&
+				a.priority(DefaultInterpreter) != 100) {
+				int64 p = a.c.P();
+				Expr::cht base;
+				if (a.tk == ADD)base = a.ch;
+				else base.emplace_back(a);
+				a.ch.clear();
+				a.tk = ADD;
+				a.c = 1;
+				while (p) {
+					if (p & 1)a.ch = mulExpr(a.ch, base);
+					base = mulExpr(base, base);
+					p >>= 1;
+				}
+				//if (!a.ch.size())a.ch.emplace_back(RationalNumber(1));
+				//cout << "a " << a.serialize(DefaultInterpreter) << endl;
+			}
+		}
+		e.ch = expandAdd(e);
+		e.tk = ADD;
+		e.c = 1;
+	}
+	else if (e.tk == ADD) {
+		e.ch = expandAdd(e);
+		for (Expr& i : e.ch) {
+			if (bool(i.c == 1) || i.tk != ADD)
+				continue;
+			for (Expr& j : i.ch)
+				j.c *= i.c;
+			i.c = 1;
+		}
+	}
+	if (!e.laz)e.calc_laz();
+	if (e.tk == ADD) {
+		sortList(e.ch, cmpAddExpr);
+		e = mergeTerms(e);
+	}
+	else if (e.tk == MUL) {
+		sortList(e.ch, cmpMulExpr);
+		e = mergeTerms(e);
+	}
+	e.normalize(false);
 }
 
 static vart Pir_expand_f(vart obj, const Arguments& args) {
@@ -501,6 +496,7 @@ static vart Pir_expand_f(vart obj, const Arguments& args) {
 		ret = *e->expr;
 	}
 	expand(ret);
+	sortExpr(ret);
 	return Pir_expr(ret);
 }
 PirBFObject Pir_expand_BF = {
@@ -523,3 +519,24 @@ PirBFObject Pir_isconstexpr_BF = {
 	ObjectFunc(Pir_isconstexpr_f,{{"expression",0}})
 };
 vart Piroof::PirIsconstexpr = (vart)&Pir_isconstexpr_BF;
+
+static vart Pir_sortexpr_f(vart obj, const Arguments& args) {
+	typet type = Pir_type(args[0]);
+	Expr ret;
+	if ((vart)type != PirExprType) {
+		PirExprObject* e = (PirExprObject*)Pir_expr(args[0]);
+		ret = *e->expr;
+		Pir_release((vart)e);
+	}
+	else {
+		PirExprObject* e = (PirExprObject*)args[0];
+		ret = *e->expr;
+	}
+	sortExpr(ret);
+	return Pir_expr(ret);
+}
+PirBFObject Pir_sortexpr_BF = {
+	PirBFType,ST_CONST | ST_ARGC,0,
+	ObjectFunc(Pir_sortexpr_f,{{"expression",0}})
+};
+vart Piroof::PirSortexpr = (vart)&Pir_sortexpr_BF;

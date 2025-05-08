@@ -4,8 +4,9 @@
 
 namespace Piroof {
 	struct Expr {
-		typedef List<Expr, uint8> cht;
-		typedef _String<uint8> strt;
+		static MemoryPoolForList<ListNode<Expr>> Pir_exprmempool;
+		typedef List<Expr, Pir_exprmempool,uint64> cht;
+		typedef _String<uint64> strt;
 		//std::vector<Expr> ch;
 		cht ch;
 		void* val = 0;
@@ -13,6 +14,9 @@ namespace Piroof {
 		RationalNumber c = 1;
 
 		Expr() {}
+		bool empty()const {
+			return tk == NONE;
+		}
 		Expr(const RationalNumber& num) {
 			tk = NUMBER;
 			c = num;
@@ -32,6 +36,9 @@ namespace Piroof {
 			ch.emplace_back(a);
 			ch.emplace_back(b);
 			normalize(false);
+		}
+		Expr(const Expr& e) {
+			*this = e;
 		}
 		bool isNum()const {
 			return tk == NUMBER;
@@ -94,11 +101,19 @@ namespace Piroof {
 		Expr operator-()const {
 			if (tk==NUMBER)
 				return -c;
-			return Expr(-1) * (*this);
+			return Expr(ADD,Expr(-1), *this);
 		}
 
 		friend Expr operator-(const Expr& a,const Expr& b) {
-			return a + (-b);
+			if (a.tk == ADD) {
+				Expr ret = a;
+				ret.ch.emplace_back(a);
+				ret.ch.back().c = -1;
+				return ret;
+			}
+			Expr ret(ADD, a, b);
+			ret.ch.back().c = -1;
+			return ret;
 		}
 
 		friend Expr operator/(const Expr& a,const Expr& b) {
@@ -116,6 +131,7 @@ namespace Piroof {
 		}
 
 		void normalize(bool tree) {
+			//std::cout << "normalize " << serialize(DefaultInterpreter) << std::endl;
 			if (tree)
 				for (Expr& i : ch) {
 					i.normalize(true);
@@ -124,7 +140,7 @@ namespace Piroof {
 			if (tk!=ADD&&tk!=MUL)
 				return;
 			if (ch.size() == 1) {
-				if (ch.size() == 1 && bool(ch.front().c == 1)) {
+				if (bool(ch.front().c == 1)) {
 					RationalNumber x = c;
 					Expr t = ch.front();
 					*this = t;
@@ -137,7 +153,7 @@ namespace Piroof {
 			}
 			if (ch.size() && bool(ch.front().c == 1) && ch.front().tk == tk) {
 				//std::vector<Expr> nch = ch.front().ch;
-				List<Expr,uint8> nch = ch.front().ch;
+				cht nch = ch.front().ch;
 				auto p = ch.begin();
 				++p;
 				nch.insert(nch.end(),p,ch.end());
@@ -172,6 +188,24 @@ namespace Piroof {
 			}
 			laz++;
 		}
+		void removeCoeff() {
+			
+			if (tk == ADD) {
+				for (Expr& i : ch) {
+					if (i.c == 1)continue;
+					Expr t = i; t.c = 1;
+					i = Expr(MUL, i.c, t);
+				}
+			}
+			else if (tk == MUL) {
+				for (Expr& i : ch) {
+					if (i.c == 1)continue;
+					Expr t = i; t.c = 1;
+					i = Expr(POW, t, i.c);
+				}
+			}
+			//for (Expr& i : ch)i.removeCoeff();
+		}
 	};
 
 	struct PirExprObject {
@@ -186,5 +220,7 @@ namespace Piroof {
 	vart Pir_expr(const Expr& expr);
 	vart Pir_expr(vart obj);
 
-	extern vart PirExpand, PirIsconstexpr;
+	extern vart PirExpand, PirIsconstexpr, PirSortexpr;
+
+
 }
